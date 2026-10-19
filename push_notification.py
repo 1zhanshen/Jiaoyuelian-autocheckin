@@ -4,11 +4,11 @@ from email.mime.text import MIMEText
 from email.header import Header
 
 # --- 配置区 ---
-SMTP_SERVER = "smtp.qq.com"       # QQ邮箱用 smtp.qq.com，163邮箱用 smtp.163.com
-SMTP_PORT = 465                    # 一般用 465（SSL加密）
-SENDER_EMAIL = "768328519@qq.com"    # 你的发件邮箱
-SENDER_AUTH_CODE = os.environ.get('EMAIL_AUTH_CODE')  # 从GitHub Secrets读取授权码
-RECEIVER_EMAIL = "768328519@qq.com"  # 收件邮箱，可以填同一个
+SMTP_SERVER = "smtp.qq.com"
+SMTP_PORT = 465
+SENDER_EMAIL = "768328519@qq.com"    # 请替换为你的发件邮箱
+SENDER_AUTH_CODE = os.environ.get('EMAIL_AUTH_CODE')
+RECEIVER_EMAIL = "768328519@qq.com"  # 请替换为你的收件邮箱
 
 def send_email_notification(result_text):
     if not SENDER_AUTH_CODE:
@@ -16,11 +16,13 @@ def send_email_notification(result_text):
         return
     try:
         message = MIMEText(result_text, 'plain', 'utf-8')
-        message['From'] = Header("签到机器人", 'utf-8')
-        message['To'] = Header("主人", 'utf-8')
+        
+        # 【关键修复】From 头部必须严格遵循 RFC 规范，移除 'utf-8' 编码参数
+        # 使用标准格式：昵称 <邮箱地址>
+        message['From'] = Header(f"签到机器人 <{SENDER_EMAIL}>") 
+        message['To'] = Header(f"主人 <{RECEIVER_EMAIL}>")
         message['Subject'] = Header("皎月连签到结果", 'utf-8')
 
-        # 使用 SSL 加密连接
         server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
         server.login(SENDER_EMAIL, SENDER_AUTH_CODE)
         server.sendmail(SENDER_EMAIL, [RECEIVER_EMAIL], message.as_string())
@@ -31,6 +33,5 @@ def send_email_notification(result_text):
 
 if __name__ == "__main__":
     import sys
-    # 从命令行接收 checkin.js 传来的签到结果
     result = sys.argv[1] if len(sys.argv) > 1 else "未收到签到结果"
     send_email_notification(result)
