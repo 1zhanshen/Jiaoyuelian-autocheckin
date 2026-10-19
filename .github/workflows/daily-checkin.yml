@@ -35,7 +35,7 @@ jobs:
       env:
         NATPIERCE_USERNAME: ${{ secrets.NATPIERCE_USERNAME }} # Pass username to checkin.js
         NATPIERCE_PASSWORD: ${{ secrets.NATPIERCE_PASSWORD }} # Pass password to checkin.js
-        token: ${{ secrets.PUSHPLUS_TOKEN }} # From GitHub Secrets for PushPlus token
+        EMAIL_AUTH_CODE: ${{ secrets.EMAIL_AUTH_CODE }}
       run: |
         # Run checkin.js and capture its output
         CHECKIN_OUTPUT=$(node checkin.js)
