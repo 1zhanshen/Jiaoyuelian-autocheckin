@@ -2,6 +2,7 @@ import smtplib
 import os
 from email.mime.text import MIMEText
 from email.header import Header
+from email.utils import formataddr  # 【关键修复】导入标准格式化工具
 
 # --- 配置区 ---
 SMTP_SERVER = "smtp.qq.com"
@@ -17,10 +18,9 @@ def send_email_notification(result_text):
     try:
         message = MIMEText(result_text, 'plain', 'utf-8')
         
-        # 【关键修复】From 头部必须严格遵循 RFC 规范，移除 'utf-8' 编码参数
-        # 使用标准格式：昵称 <邮箱地址>
-        message['From'] = Header(f"签到机器人 <{SENDER_EMAIL}>") 
-        message['To'] = Header(f"主人 <{RECEIVER_EMAIL}>")
+        # 【关键修复】使用标准方法格式化头部，并使用纯英文昵称
+        message['From'] = formataddr(("Checkin Bot", SENDER_EMAIL))
+        message['To'] = formataddr(("Owner", RECEIVER_EMAIL))
         message['Subject'] = Header("皎月连签到结果", 'utf-8')
 
         server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
