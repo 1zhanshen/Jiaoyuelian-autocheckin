@@ -43,7 +43,7 @@ async function autoCheckIn() {
     await page.setViewport({ width: 1280, height: 720 });
     
     console.log('登录中...');
-    await page.goto('https://www.natpierce.cn/pc/login/login.html', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.goto('https://www.natpierce.cn/pc/sign/index.html', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await delay(2000);
     
     await page.waitForSelector('input[placeholder="请输入手机号或邮箱"]', { timeout: 30000 });
