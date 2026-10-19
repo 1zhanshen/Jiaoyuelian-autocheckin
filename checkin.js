@@ -1,4 +1,4 @@
-// checkin.js - 皎月连自动签到 (优化版)
+// checkin.js - 皎月连自动签到 (防导航报错优化版)
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const https = require('https');
@@ -24,37 +24,49 @@ function solveWithOpenCV(bgPath, jigPath) {
   return parseInt(result.toString().trim());
 }
 
-// 提取出处理滑块验证码的通用函数
-async function handleCaptcha(page) {
-  const images = await page.evaluate(() => {
-    const bg = document.querySelector('img.yidun_bg-img');
-    const jig = document.querySelector('img.yidun_jigsaw');
-    return { bg: bg?.src, jig: jig?.src };
-  });
-  
-  if (images.bg && images.jig) {
-    console.log('⚠️ 检测到滑块验证码，尝试解决...');
-    await downloadImage(images.bg, '/tmp/captcha_bg.jpg');
-    await downloadImage(images.jig, '/tmp/captcha_jig.png');
-    
+// 带有自动重试功能的验证码处理函数
+async function handleCaptchaWithRetry(page, maxRetries = 3) {
+  for (let i = 1; i <= maxRetries; i++) {
     try {
-      const offset = solveWithOpenCV('/tmp/captcha_bg.jpg', '/tmp/captcha_jig.png');
-      console.log('计算滑动偏移:', offset);
+      // 关键修复：在检查前先等待页面网络空闲，确保导航完成
+      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
+      await delay(1000); // 额外缓冲1秒
+
+      const images = await page.evaluate(() => {
+        const bg = document.querySelector('img.yidun_bg-img');
+        const jig = document.querySelector('img.yidun_jigsaw');
+        return { bg: bg?.src, jig: jig?.src };
+      });
       
-      const slider = await page.$('.yidun_slider');
-      if (slider) {
-        const box = await slider.boundingBox();
-        console.log('正在拖动滑块...');
-        await page.mouse.move(box.x + box.width/2, box.y + box.height/2);
-        await page.mouse.down();
-        // 增加一点随机抖动，模拟真人
-        await page.mouse.move(box.x + box.width/2 + offset, box.y + box.height/2, { steps: 20 });
-        await page.mouse.up();
-        await delay(2000); 
-        return true;
+      if (images.bg && images.jig) {
+        console.log(`⚠️ 第 ${i} 次尝试：检测到滑块验证码，尝试解决...`);
+        await downloadImage(images.bg, '/tmp/captcha_bg.jpg');
+        await downloadImage(images.jig, '/tmp/captcha_jig.png');
+        
+        const offset = solveWithOpenCV('/tmp/captcha_bg.jpg', '/tmp/captcha_jig.png');
+        console.log('计算滑动偏移:', offset);
+        
+        const slider = await page.$('.yidun_slider');
+        if (slider) {
+          const box = await slider.boundingBox();
+          await page.mouse.move(box.x + box.width/2, box.y + box.height/2);
+          await page.mouse.down();
+          await page.mouse.move(box.x + box.width/2 + offset, box.y + box.height/2, { steps: 20 });
+          await page.mouse.up();
+          await delay(3000); 
+          return true; // 处理成功
+        }
+      } else {
+        return false; // 没有验证码，无需处理
       }
     } catch (e) {
-      console.log('❌ 处理验证码失败:', e.message);
+      if (e.message.includes('Execution context was destroyed') || e.message.includes('navigation')) {
+        console.log(`第 ${i} 次检查验证码时遇到页面跳转，正在重试...`);
+        await delay(2000);
+      } else {
+        console.log(`处理验证码时发生其他错误: ${e.message}`);
+        return false;
+      }
     }
   }
   return false;
@@ -82,7 +94,6 @@ async function autoCheckIn() {
     await page.setViewport({ width: 1280, height: 720 });
     
     console.log('1. 正在访问登录页...');
-    // 【修复点1】恢复正确的登录页面 URL
     await page.goto('https://www.natpierce.cn/pc/login/login.html', { waitUntil: 'networkidle2', timeout: 60000 });
     await delay(2000);
     
@@ -90,13 +101,12 @@ async function autoCheckIn() {
     await page.waitForSelector('input[placeholder="请输入手机号或邮箱"]', { timeout: 30000 });
     await page.waitForSelector('input[placeholder="请输入密码"]', { timeout: 30000 });
     
-    // 【修复点2】模拟真人输入，先点击，再清空，再输入
     await page.click('input[placeholder="请输入手机号或邮箱"]');
     await page.keyboard.down('Control');
     await page.keyboard.press('KeyA');
     await page.keyboard.up('Control');
     await page.keyboard.press('Backspace');
-    await page.keyboard.type(USERNAME, { delay: 100 }); // 延迟打字
+    await page.keyboard.type(USERNAME, { delay: 100 });
     
     await page.click('input[placeholder="请输入密码"]');
     await page.keyboard.down('Control');
@@ -106,11 +116,14 @@ async function autoCheckIn() {
     await page.keyboard.type(PASSWORD, { delay: 100 });
     
     console.log('3. 点击登录按钮...');
-    await page.click('div.login_btn');
+    // 使用 Promise.all 同时等待点击和导航，更稳健
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {}),
+      page.click('div.login_btn')
+    ]);
     
     console.log('4. 检查登录过程是否需要验证码...');
-    await delay(2000);
-    await handleCaptcha(page); // 【修复点3】登录时也检查验证码
+    await handleCaptchaWithRetry(page); // 使用带重试的函数
     
     console.log('5. 等待页面跳转...');
     try {
@@ -120,14 +133,12 @@ async function autoCheckIn() {
       console.log('⚠️ 页面未自动跳转，可能登录失败或网络延迟，尝试强制进入签到页...');
     }
     
-    // 确保进入签到页
     if (!page.url().includes('sign')) {
       console.log('当前不在签到页，强制跳转...');
       await page.goto('https://www.natpierce.cn/pc/sign/index.html', { waitUntil: 'networkidle2', timeout: 60000 });
       await delay(2000);
     }
     
-    // 如果强制跳转后还在登录页，说明没登上
     if (page.url().includes('login.html')) {
       throw new Error("登录失败：可能账号密码错误，或被网站防爬虫机制拦截。");
     }
@@ -162,9 +173,6 @@ async function autoCheckIn() {
       await page.click('#qiandao');
       await delay(3000);
       
-      // 点击签到后再次检查验证码
-      await handleCaptcha(page);
-      
       console.log('8. 调用签到 API 确认结果...');
       const result = await page.evaluate(() => {
         return new Promise((resolve) => {
@@ -182,7 +190,6 @@ async function autoCheckIn() {
       }
     }
     
-    // 获取最新时间
     await page.reload({ waitUntil: 'domcontentloaded' });
     await delay(1000);
     const finalContent = await page.content();
