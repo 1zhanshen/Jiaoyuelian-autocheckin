@@ -4,7 +4,7 @@ name: Daily NatPierce Check-in
 on:
   workflow_dispatch: # 允许手动触发
   schedule:
-    - cron: '10 2 * * *' # 每天UTC时间02:10运行 (对应UTC+8的10:10，确保在可签到时间后)
+    - cron: '40 14 * * *' # 每天UTC时间14:40运行 (对应UTC+8的4:00，确保在可签到时间后)
 
 jobs:
   check-in:
